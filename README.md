@@ -1,4 +1,4 @@
-# water-scarcity-hackathon
+# ai-stock-bot-proj
 
 This project uses python to create a long-short term recurrent neural network that projects the value of a stock over a given forecasting period. 
 
