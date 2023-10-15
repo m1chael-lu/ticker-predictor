@@ -1,15 +1,16 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
             "name": "train_model",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/ai-stock-bot/train.py",
-            "console": "integratedTerminal"
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "pythonPath": "${workspaceFolder}/venv/bin/python",   // Path to your virtual environment Python interpreter
+            "env": {
+                "ALPHA_VANTAGE_API_KEY": "UA2AQ73AABNITHUO"     // Replace with your actual API key
+            }
         }
     ]
 }
