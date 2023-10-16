@@ -15,6 +15,19 @@ TRAINING_SPLIT = 0.80
 SYMBOL = "CVX"
 EPOCHS = 30
 BATCH_SIZE = 32
+
+def fetch_data_from_api(function, symbol, interval, time_period, series_type, api_key):
+    base_url = "https://www.alphavantage.co/query"
+    params = {
+        "function": function,
+        "symbol": symbol,
+        "interval": interval,
+        "time_period": time_period,
+        "series_type": series_type,
+        "apikey": api_key
+    }
+    response = requests.get(base_url, params=params)
+    return response.json()
     
 def fetch_data(symbol, api_key):
     """Fetch daily stock data using alpha_vantage."""
@@ -53,6 +66,13 @@ def structure_model(window_size, training_sma_shape_1):
 
 def preprocess_data(symbol, window_size, forecast_length, training_split, ts):
     """Preprocess stock data for LSTM and technical indicator models."""
+
+
+    # Fetch data directly from new API
+    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={api_key}'
+    r = requests.get(url)
+    raw_data = r.json()
+    
     data, meta_data = ts.get_daily(symbol, outputsize='full')
 
     data.to_csv(f'./{symbol}_daily.csv')
@@ -79,6 +99,14 @@ def preprocess_data(symbol, window_size, forecast_length, training_split, ts):
     # Normalize
     normalizer = preprocessing.MinMaxScaler()
     normalized_array = normalizer.fit_transform(regi_arr)
+
+
+
+    # API calls for technical indicators
+        # Fetch EMA, RSI, and AROON data
+    ema_data = fetch_data_from_api("EMA", symbol, "weekly", "10", "open", api_key)
+    rsi_data = fetch_data_from_api("RSI", symbol, "weekly", "10", "open", api_key)
+    aroon_data = fetch_data_from_api("AROON", symbol, "daily", "14", "open", api_key)
 
     # Format for LSTM
     normalized_formatted_x = np.zeros((num_samples, window_size, normalized_array.shape[1]))

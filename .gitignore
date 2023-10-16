@@ -1,3 +1,4 @@
+.vscode/launch.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -128,3 +129,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .vscode/launch.json
+*.json
