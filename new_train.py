@@ -11,74 +11,70 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
-import bisect
+from collections import defaultdict
+from datetime import datetime
+from constants import technical_indicators, income_statement_indicators, cash_flow_indicators
+from utils.helper import fetch_data_from_api
 
 WINDOW_SIZE = 50
 FORECAST_LENGTH = 1
 TRAINING_SPLIT = 0.80
-SYMBOL = "AMZN"
+SYMBOL = "XOM"
 EPOCHS = 100
 BATCH_SIZE = 32
+START_DATE = "2019-01-01"
+END_DATE = "2023-01-01"
 
-def fetch_data_from_api(function, symbol, interval=None, time_period=None, series_type=None, api_key=None, topics=None, outputsize=None):
-    base_url = "https://www.alphavantage.co/query"
-    
-    # Initialize the dictionary with required parameters
-    params = {
-        "function": function,
-        "symbol": symbol
-    }
-    
-    # Add optional parameters if they are not None
-    if interval is not None:
-        params["interval"] = interval
-    if time_period is not None:
-        params["time_period"] = time_period
-    if series_type is not None:
-        params["series_type"] = series_type
-    if api_key is not None:
-        params["apikey"] = api_key
-    if topics is not None:
-        params["topics"] = topics
-    if outputsize is not None:
-        params["outputsize"] = outputsize
-        
-    response = requests.get(base_url, params=params)
-    return response.json()
 
-N = 30 # 10 last data points
-WINDOW_SIZE = 30 # 45 days
+N = 30 # 30 last data points
+WINDOW_SIZE = 3 # 30 days
 K = 1
 
 
 api_key = os.environ['ALPHA_VANTAGE_API_KEY']
 
-technical_indicators = {
-    "EMA": {
-        "function": "EMA",
-        "interval": "weekly",
-        "time_period": "10",
-        "series_type": "open",
-        "key_name": "Technical Analysis: EMA",
-        "enabled": True
-    },
-    "RSI": {
-        "function": "RSI",
-        "interval": "weekly",
-        "time_period": "10",
-        "series_type": "open",
-        "key_name": "Technical Analysis: RSI",
-        "enabled": True
-    },
-    "AROON": {
-        "function": "AROON",
-        "interval": "weekly",
-        "time_period": "10",
-        "series_type": "open",
-        "key_name": "Technical Analysis: AROON",
-        "enabled": True
-    },
-}
+
+def extract_news(api_key):
+    end_time = ''.join(END_DATE.split("-")) + "T0000"
+    start_time = ''.join(START_DATE.split("-")) + "T0000"
+    article_data = fetch_data_from_api("NEWS_SENTIMENT", tickers=SYMBOL, api_key=api_key, limit=1000, time_from=start_time, time_to=end_time)
+    article_feed = article_data["feed"]
+
+    sentiment_by_date = [[datetime.strptime(n['time_published'], "%Y%m%dT%H%M%S"), n['ticker_sentiment']] for n in article_feed]
+    for s in sentiment_by_date:
+        for i in range(len(s[1])):
+            if s[1][i]['ticker'] == SYMBOL:
+                s[1] = float(s[1][i]['ticker_sentiment_score']) * float(s[1][i]['relevance_score'])
+                break
+    dates = [s[0] for s in sentiment_by_date]
+    values = [100 * s[1] for s in sentiment_by_date]
+
+    # # Create a DataFrame
+    # df = pd.DataFrame({'Date': dates, 'Value': values})
+
+    # weekly_avg = df.resample('W-Mon', on='Date').mean()
+
+    # Extract year and month and create a new column 'YearMonth'
+    # df['YearMonth'] = df['Date'].dt.to_period('M')
+
+    # Group by 'YearMonth' and compute the mean for each group
+    # monthly_avg = df.groupby('YearMonth').mean()
+
+    # weekly_avg.index = weekly_avg.index.to_timestamp()
+
+    # Plot the averaged values
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(weekly_avg.index, weekly_avg['Value'], marker='o', color='blue')
+
+    # # Labeling the plot
+    # plt.title("Average Values by Month")
+    # plt.xlabel("Month")
+    # plt.ylabel("Average Value")
+    # plt.grid(True)
+
+    # plt.show()
+
+    return article_data
 
 def extract_technical_indicators(api_key):
     data_extract = {}
@@ -89,7 +85,7 @@ def extract_technical_indicators(api_key):
                 technical_indicators[key]["function"],
                 SYMBOL,
                 technical_indicators[key]["interval"],
-                technical_indicators[key]["time_period"],
+                technical_indicators[key].get("time_period", None),
                 technical_indicators[key]["series_type"],
                 api_key
             )[technical_indicators[key]["key_name"]]
@@ -99,6 +95,7 @@ def extract_technical_indicators(api_key):
             else:
                 data_extract["AROON_UP"] = sorted([(k, float(data_extract[key][k]['Aroon Up'])) for k in data_extract[key]])
                 data_extract["AROON_DOWN"] = sorted([(k, float(data_extract[key][k]['Aroon Down'])) for k in data_extract[key]])
+                data_extract.pop("AROON")
     
     return data_extract
 
@@ -108,12 +105,35 @@ def extract_prices(api_key):
     data_extracted = sorted([(key, float(data[key]['1. open'])) for key in data])
     return data_extracted
 
-extracted = extract_technical_indicators(api_key)
-ema, rsi, aroon_up, aroon_down = extracted["EMA"], extracted["RSI"], extracted["AROON_UP"], extracted["AROON_DOWN"]
-stock_data = extract_prices(api_key)
+def extract_income_statement(api_key):
+    income_statement = fetch_data_from_api("INCOME_STATEMENT", SYMBOL, api_key=api_key)
+    quarterly = income_statement["quarterlyReports"]
+    feature_extract = defaultdict(lambda: [])
+    for report in quarterly:
+        for figure in income_statement_indicators:
+            feature_extract[figure].append((report['fiscalDateEnding'], float(report[figure])))
+    for key in feature_extract:
+        feature_extract[key] = sorted(feature_extract[key])
+    return feature_extract
 
-START_DATE = "2010-01-01"
-END_DATE = "2022-01-01"
+def extract_cash_flow_statement(api_key):
+    cash_flow_statements = fetch_data_from_api("CASH_FLOW", SYMBOL, api_key=api_key)
+    quarterly = cash_flow_statements["quarterlyReports"]
+    feature_extract = defaultdict(lambda: [])
+    for report in quarterly:
+        for figure in cash_flow_indicators:
+            feature_extract[figure].append((report['fiscalDateEnding'], float(report[figure])))
+    for key in feature_extract:
+        feature_extract[key] = sorted(feature_extract[key])
+    return feature_extract
+
+extracted_technical = extract_technical_indicators(api_key)
+extracted_income = extract_income_statement(api_key)
+ema, rsi, aroon_up, aroon_down = extracted_technical["EMA"], extracted_technical["RSI"], extracted_technical["AROON_UP"], extracted_technical["AROON_DOWN"]
+stock_data = extract_prices(api_key)
+extracted_news = extract_news(api_key)
+extracted_cash_flow = extract_cash_flow_statement(api_key)
+extracted_income.update(extracted_cash_flow)
 
 def convert(date):
     year, month, day = date.split("-")
@@ -130,73 +150,107 @@ def convert_back(date):
         day = f"0{day}"
     return f"{year}-{month}-{day}"
 
-def generate_technical_data():
-    ema_idx, rsi_idx, aroon_up_idx, aroon_down_idx, price_idx = 0, 0, 0, 0, 0
-    ema_data, rsi_data, aroon_up_data, aroon_down_data, price_data, current_price_data = [], [], [], [], [], []
-
+def generate_technical_data(extracted_data):
+    generated_data = {}
+    data_idx = {}
+    for key in extracted_data:
+        data_idx[key] = 0
+        generated_data[key] = []
+    
+    price_idx, price_data, current_price_data = 0, [], []
     current_day = convert(START_DATE)
     end_day = convert(END_DATE)
     while current_day < end_day:
-        while convert(ema[ema_idx][0]) < current_day:
-            ema_idx += 1
-        while convert(rsi[rsi_idx][0]) < current_day:
-            rsi_idx += 1
-        while convert(aroon_up[aroon_up_idx][0]) < current_day:
-            aroon_up_idx += 1
-        while convert(aroon_down[aroon_down_idx][0]) < current_day:
-            aroon_down_idx += 1
+        # Technical Indicators
+        for key in extracted_data:
+            while convert(extracted_data[key][data_idx[key]][0]) < current_day:
+                data_idx[key] += 1
+            generated_data[key].append([value for _, value in extracted_data[key][data_idx[key]-N:data_idx[key]]])
+
+        # Fundamental Indicators
         while convert(stock_data[price_idx][0]) < current_day + K:
             price_idx += 1
-        ema_data.append([value for _, value in ema[ema_idx-N:ema_idx]])
-        rsi_data.append([value for _, value in rsi[rsi_idx-N:rsi_idx]])
-        aroon_up_data.append([value for _, value in aroon_up[aroon_up_idx-N:aroon_up_idx]])
-        aroon_down_data.append([value for _, value in aroon_down[aroon_down_idx-N:aroon_down_idx]])
+        
         current_price_data.append(stock_data[price_idx - K][1])
         price_data.append(stock_data[price_idx][1])
 
         current_day += WINDOW_SIZE
-    return ema_data, rsi_data, aroon_up_data, aroon_down_data, current_price_data, price_data
+    return generated_data, current_price_data, price_data
 
+def generate_single_factor_data(extracted_fundamental):
+    fundamental_idx = defaultdict(lambda: 0)
+    generated_fundamental = defaultdict(lambda: [])
+    current_day = convert(START_DATE)
+    end_day = convert(END_DATE)
+    while current_day < end_day:
+        # Income Statement Indicators
+        for key in extracted_fundamental:
+            while convert(extracted_fundamental[key][fundamental_idx[key]][0]) < current_day:
+                fundamental_idx[key] += 1
+            generated_fundamental[key].append(extracted_fundamental[key][fundamental_idx[key] - K][1])
+        current_day += WINDOW_SIZE
+    return generated_fundamental
+        
 
-
-# 1. Convert to NumPy arrays
-# Convert each list into numpy arrays
-ema_data_np, rsi_data_np, aroon_up_data_np, aroon_down_data_np, current_price_data_np, price_data_np = map(np.array, generate_technical_data())
-
-# Convert each technical indicator to have a shape of (num_samples, sequence_length, 1)
 def reshape_data(data):
     return data.reshape(data.shape[0], data.shape[1], 1)
 
-ema_data_3d = reshape_data(ema_data_np)
-rsi_data_3d = reshape_data(rsi_data_np)
-aroon_up_data_3d = reshape_data(aroon_up_data_np)
-aroon_down_data_3d = reshape_data(aroon_down_data_np)
+# 1. Convert to NumPy arrays
+# Convert each list into numpy arrays
+generated_data, current_price_data, price_data = generate_technical_data(extracted_technical)
+generated_fundamental = generate_single_factor_data(extracted_income)
+for key in generated_data: generated_data[key] = reshape_data(np.array(generated_data[key]))
+current_price_data_np, price_data_np = np.array(current_price_data), np.array(price_data)
+for key in generated_fundamental: generated_fundamental[key] = np.array(generated_fundamental[key])
 
-# Stack them along the feature axis
-technical_data_3d = np.concatenate([ema_data_3d, rsi_data_3d, aroon_up_data_3d, aroon_down_data_3d], axis=2)
 
 # Normalize data
-scaler_x = MinMaxScaler(feature_range=(0, 1))
+scalers_x = {}
+
+# Create a MinMaxScaler for each feature
+for key in generated_data:
+    scalers_x[key] = MinMaxScaler(feature_range=(0, 1))
+
+# Stack them along the feature axis
+technical_data_order = [key for key in generated_data]
+for key in technical_data_order:
+    generated_data[key][:, :, 0] = scalers_x[key].fit_transform(generated_data[key][:, :, 0]) 
+technical_data_3d = np.concatenate([generated_data[key] for key in technical_data_order], axis=2)
+
 scaler_y = MinMaxScaler(feature_range=(0, 1))
 
 # Reshape current_price_data for concatenation
 current_price_data_np = current_price_data_np[:, np.newaxis]
 
-# Apply the MinMaxScaler separately to each feature
-for i in range(technical_data_3d.shape[2]):
-    technical_data_3d[:, :, i] = scaler_x.fit_transform(technical_data_3d[:, :, i])
-
 price_data_normalized = scaler_y.fit_transform(price_data_np.reshape(-1, 1))
+
+fundamental_order = [key for key in generated_fundamental]
+for key in fundamental_order:
+    scalers_x[key] = MinMaxScaler(feature_range=(0, 1))
+
+for key in fundamental_order:
+    generated_fundamental[key] = scalers_x[key].fit_transform(generated_fundamental[key].reshape(-1, 1))
 
 # Split the data into training and testing sets (80% train, 20% test)
 X_train, X_test, y_train, y_test = train_test_split(technical_data_3d, price_data_normalized, test_size=0.2, shuffle=False)
-X_price_train, X_price_test = train_test_split(current_price_data_np, test_size=0.2, shuffle=False)
+
+# Including single factor price into the generated fundamental
+generated_fundamental['currentPrice'] = price_data_normalized
+
+fundamental_order.append("currentPrice")
+
+train_test_single_factor_splits = {}
+for key in generated_fundamental:
+    train_test_single_factor_splits[key] = train_test_split(generated_fundamental[key], test_size=0.2, shuffle=False)
+
+X_single_train = np.concatenate([train_test_single_factor_splits[key][0] for key in fundamental_order if type(key) == str], axis=1)
+X_single_test = np.concatenate([train_test_single_factor_splits[key][1] for key in fundamental_order if type(key) == str], axis=1)
 
 # 2. Construct LSTM model with multiple inputs
 
 # Technical indicators input branch
 input_technical = Input(shape=(X_train.shape[1], X_train.shape[2]))
-lstm_tech = LSTM(50, return_sequences=True)(input_technical)
+lstm_tech = LSTM(50, return_sequences=True, kernel_initializer='he_normal')(input_technical)
 lstm_tech = Dropout(0.2)(lstm_tech)
 lstm_tech = LSTM(50, return_sequences=True)(lstm_tech)
 lstm_tech = Dropout(0.2)(lstm_tech)
@@ -204,25 +258,26 @@ lstm_tech = LSTM(50)(lstm_tech)
 lstm_tech_out = Dropout(0.2)(lstm_tech)
 
 # Current price input branch
-input_price = Input(shape=(1,))
-dense_price = Dense(16, activation='relu')(input_price)
+# Single Factor Input Branch
+single_fact_input = Input(shape=(len(generated_fundamental.keys()),))
+dense_single = Dense(16, activation='relu')(single_fact_input)
 
 # Merge the outputs of the two branches
-merged = concatenate([lstm_tech_out, dense_price])
+merged = concatenate([lstm_tech_out, dense_single])
 
 # Add a final dense layer
 output = Dense(1)(merged)
 
 # Compile the model
-model = Model(inputs=[input_technical, input_price], outputs=output)
+model = Model(inputs=[input_technical, single_fact_input], outputs=output)
 model.compile(optimizer='adam', loss='mean_squared_error')
 
 # Train the model
-model.fit([X_train, X_price_train], y_train, epochs=EPOCHS, batch_size=BATCH_SIZE)
+model.fit([X_train, X_single_train], y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, validation_split=0.1)
 
 
 # 6. Evaluate the model
-y_pred = model.predict([X_test, X_price_test])
+y_pred = model.predict([X_test, X_single_test])
 y_pred_original = scaler_y.inverse_transform(y_pred) # Convert back to original price scale
 y_test_original = scaler_y.inverse_transform(y_test)
 
@@ -230,8 +285,8 @@ y_test_original = scaler_y.inverse_transform(y_test)
 mse = np.mean(np.square(y_pred_original - y_test_original))
 print(f'Mean Squared Error on Test Data: {mse}')
 
-y_train_pred = model.predict([X_train, X_price_train])
-y_test_pred = model.predict([X_test, X_price_test])
+y_train_pred = model.predict([X_train, X_single_train])
+y_test_pred = model.predict([X_test, X_single_test])
 
 # Directional accuracy
 def directional_accuracy(y_true, y_pred):
@@ -264,7 +319,29 @@ plt.ylabel("Stock Price")
 plt.legend()
 plt.show()
 
-article_data = fetch_data_from_api("NEWS_SENTIMENT", SYMBOL, api_key=api_key)
-
-income_statement = fetch_data_from_api("INCOME_STATEMENT", SYMBOL, api_key=api_key)
 cash_flow = fetch_data_from_api("CASH_FLOW", SYMBOL, api_key=api_key)
+
+def future_projection(model, stock_data, technical_data, income_data, cash_flow_data):
+    single_factor = np.zeros((1, 1 + len(income_data.keys())))
+    multifactor = np.zeros((1, N, len(technical_data.keys())))
+    for i in range(len(technical_data_order)):
+        key = technical_data_order[i]
+        multifactor[0, :, i] = scalers_x[key].transform(np.array([value for _, value in technical_data[key][-N:]]).reshape((1, -1))).reshape(N)
+    for i in range(len(fundamental_order)):
+        key = fundamental_order[i]
+        if key == "currentPrice":
+            single_factor[0, i] = scaler_y.transform(np.array(stock_data[-1][1]).reshape((1, -1))).reshape(1)
+        elif key in income_statement_indicators:
+            single_factor[0, i] = scalers_x[key].transform(np.array(income_data[key][-1][1]).reshape((1, -1))).reshape(1)
+        else:
+            single_factor[0, i] = scalers_x[key].transform(np.array(cash_flow_data[key][-1][1]).reshape((1, -1))).reshape(1)
+    return model.predict([multifactor, single_factor])
+
+future_price = future_projection(model, stock_data, extracted_technical, extracted_income, extracted_cash_flow)
+
+
+
+print(f"Predicted future price: {int(scaler_y.inverse_transform(future_price))}")
+print(f"Current price: {stock_data[-1][1]}")
+print(f"Up/Down Prediction: {'Up' if future_price > stock_data[-1][1] else 'Down'}")
+print(f"Backtested Accuracy: {dir_acc * 100:.2f}%")
