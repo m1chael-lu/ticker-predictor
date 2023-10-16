@@ -15,6 +15,7 @@ from collections import defaultdict
 from datetime import datetime
 from constants import technical_indicators, income_statement_indicators, cash_flow_indicators
 from utils.helper import fetch_data_from_api
+from keras.regularizers import l1_l2
 
 WINDOW_SIZE = 50
 FORECAST_LENGTH = 1
@@ -250,17 +251,17 @@ X_single_test = np.concatenate([train_test_single_factor_splits[key][1] for key 
 
 # Technical indicators input branch
 input_technical = Input(shape=(X_train.shape[1], X_train.shape[2]))
-lstm_tech = LSTM(50, return_sequences=True, kernel_initializer='he_normal')(input_technical)
+lstm_tech = LSTM(25, return_sequences=True, kernel_initializer='he_normal')(input_technical)
 lstm_tech = Dropout(0.2)(lstm_tech)
-lstm_tech = LSTM(50, return_sequences=True)(lstm_tech)
+lstm_tech = LSTM(25, return_sequences=True)(lstm_tech)
 lstm_tech = Dropout(0.2)(lstm_tech)
-lstm_tech = LSTM(50)(lstm_tech)
+lstm_tech = LSTM(25)(lstm_tech)
 lstm_tech_out = Dropout(0.2)(lstm_tech)
 
 # Current price input branch
 # Single Factor Input Branch
 single_fact_input = Input(shape=(len(generated_fundamental.keys()),))
-dense_single = Dense(16, activation='relu')(single_fact_input)
+dense_single = Dense(16, activation='relu', kernel_regularizer=l1_l2(l1=0.01, l2=0.01))(single_fact_input)
 
 # Merge the outputs of the two branches
 merged = concatenate([lstm_tech_out, dense_single])
@@ -298,8 +299,8 @@ dir_acc = directional_accuracy(y_test_original, y_pred_original)
 print(f'Directional Accuracy on Test Data: {dir_acc * 100:.2f}%')
 
 # Combining data for plotting
-actual_values = np.concatenate([y_train, y_test])
-predicted_values = np.concatenate([y_train_pred, y_test_pred])
+actual_values = np.concatenate([scaler_y.inverse_transform(y_train), scaler_y.inverse_transform(y_test)])
+predicted_values = np.concatenate([scaler_y.inverse_transform(y_train_pred), scaler_y.inverse_transform(y_test_pred)])
 
 # Plotting the actual values
 plt.figure(figsize=(14, 7))
