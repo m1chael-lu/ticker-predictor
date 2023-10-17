@@ -92,12 +92,10 @@ for key in technical_data_order:
     generated_data[key][:, :, 0] = scalers_x[key].fit_transform(generated_data[key][:, :, 0]) 
 technical_data_3d = np.concatenate([generated_data[key] for key in technical_data_order], axis=2)
 
-scaler_y = MinMaxScaler(feature_range=(0, 1))
-
 # Reshape current_price_data for concatenation
 current_price_data_np = current_price_data_np[:, np.newaxis]
 
-price_data_normalized = scaler_y.fit_transform(price_data_np.reshape(-1, 1))
+price_data_normalized = price_data_np.reshape(-1, 1)
 
 fundamental_order = [key for key in generated_fundamental]
 for key in fundamental_order:
@@ -153,8 +151,8 @@ model.fit([X_train, X_single_train], y_train, epochs=EPOCHS, batch_size=BATCH_SI
 
 # 6. Evaluate the model
 y_pred = model.predict([X_test, X_single_test])
-y_pred_original = scaler_y.inverse_transform(y_pred) # Convert back to original price scale
-y_test_original = scaler_y.inverse_transform(y_test)
+y_pred_original = y_pred # Convert back to original price scale
+y_test_original = y_test
 
 # Calculate MSE or any other error metric
 mse = np.mean(np.square(y_pred_original - y_test_original))
@@ -173,8 +171,8 @@ dir_acc = directional_accuracy(y_test_original, y_pred_original)
 print(f'Directional Accuracy on Test Data: {dir_acc * 100:.2f}%')
 
 # Combining data for plotting
-actual_values = np.concatenate([scaler_y.inverse_transform(y_train), scaler_y.inverse_transform(y_test)])
-predicted_values = np.concatenate([scaler_y.inverse_transform(y_train_pred), scaler_y.inverse_transform(y_test_pred)])
+actual_values = np.concatenate([y_train, y_test])
+predicted_values = np.concatenate([y_train_pred, y_test_pred])
 
 # Plotting the actual values
 plt.figure(figsize=(14, 7))
@@ -205,7 +203,7 @@ def future_projection(model, stock_data, technical_data, income_data, cash_flow_
     for i in range(len(fundamental_order)):
         key = fundamental_order[i]
         if key == "currentPrice":
-            single_factor[0, i] = scaler_y.transform(np.array(stock_data[-1][1]).reshape((1, -1))).reshape(1)
+            single_factor[0, i] = np.array(stock_data[-1][1]).reshape((1, -1)).reshape(1)
         elif key in income_statement_indicators:
             single_factor[0, i] = scalers_x[key].transform(np.array(income_data[key][-1][1]).reshape((1, -1))).reshape(1)
         else:
@@ -213,7 +211,7 @@ def future_projection(model, stock_data, technical_data, income_data, cash_flow_
     return model.predict([multifactor, single_factor])
 
 future_price = future_projection(model, stock_data, extracted_technical, extracted_income, extracted_cash_flow)
-scaled_future_price = float(scaler_y.inverse_transform(future_price))
+scaled_future_price = float(future_price)
 
 
 print(f"Predicted future price: {scaled_future_price}")
