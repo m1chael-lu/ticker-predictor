@@ -1,9 +1,9 @@
-from constants import technical_indicators, cash_flow_indicators, income_statement_indicators, SYMBOL, END_DATE, START_DATE
+from constants import technical_indicators, cash_flow_indicators, income_statement_indicators, END_DATE, START_DATE
 from utils.helper import fetch_data_from_api
 from collections import defaultdict
 from datetime import datetime
 
-def extract_technical_indicators(api_key):
+def extract_technical_indicators(api_key, SYMBOL):
     data_extract = {}
 
     for key in technical_indicators:
@@ -26,12 +26,12 @@ def extract_technical_indicators(api_key):
     
     return data_extract
 
-def extract_prices(api_key):
+def extract_prices(api_key, SYMBOL):
     data = fetch_data_from_api("TIME_SERIES_DAILY", SYMBOL, api_key=api_key, outputsize="full")["Time Series (Daily)"]
     data_extracted = sorted([(key, float(data[key]['1. open'])) for key in data])
     return data_extracted
 
-def extract_income_statement(api_key):
+def extract_income_statement(api_key, SYMBOL):
     income_statement = fetch_data_from_api("INCOME_STATEMENT", SYMBOL, api_key=api_key)
     quarterly = income_statement["quarterlyReports"]
     feature_extract = defaultdict(lambda: [])
@@ -42,7 +42,7 @@ def extract_income_statement(api_key):
         feature_extract[key] = sorted(feature_extract[key])
     return feature_extract
 
-def extract_cash_flow_statement(api_key):
+def extract_cash_flow_statement(api_key, SYMBOL):
     cash_flow_statements = fetch_data_from_api("CASH_FLOW", SYMBOL, api_key=api_key)
     quarterly = cash_flow_statements["quarterlyReports"]
     feature_extract = defaultdict(lambda: [])
@@ -53,7 +53,7 @@ def extract_cash_flow_statement(api_key):
         feature_extract[key] = sorted(feature_extract[key])
     return feature_extract
 
-def extract_news(api_key):
+def extract_news(api_key, SYMBOL):
     end_time = ''.join(END_DATE.split("-")) + "T0000"
     start_time = ''.join(START_DATE.split("-")) + "T0000"
     article_data = fetch_data_from_api("NEWS_SENTIMENT", tickers=SYMBOL, api_key=api_key, limit=1000, time_from=start_time, time_to=end_time)

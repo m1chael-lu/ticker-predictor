@@ -1,0 +1,51 @@
+/* Main Window Styles */
+QWidget {
+    background-color: lightgray;
+}
+
+/* Main Title Styles */
+QLabel[title="true"] {
+    font-size: 24px;
+    font-weight: bold;
+    padding: 20px;
+}
+
+/* Section Title Styles */
+QLabel[sectionTitle="true"] {
+    font-size: 20px;
+    padding: 10px;
+}
+
+/* Divider Styles */
+QFrame[divider="true"] {
+    background-color: gray;
+    width: 2px;
+}
+
+/* Input Fields Styles */
+QLineEdit {
+    border: 2px solid gray;
+    padding: 5px;
+    background-color: white;
+    color: black; 
+}
+
+/* Button Styles */
+QPushButton {
+    background-color: #68c6b8;
+    hover {
+        background-color: #55ab9e;
+    }
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    text-align: center;
+    border-radius: 5px;
+    font-size: 16px;
+    margin: 10px 2px;
+    cursor: pointer;
+}
+
+QPushButton:hover {
+    background-color: #45a049;
+}

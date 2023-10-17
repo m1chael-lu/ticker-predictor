@@ -11,12 +11,15 @@ from utils.data_extract import extract_technical_indicators, extract_prices, ext
 from constants import TRAINING_SPLIT, SYMBOL, EPOCHS, BATCH_SIZE, START_DATE, END_DATE, N, WINDOW_SIZE, K
 from utils.data_generation import generate_technical_data, generate_single_factor_data
 from utils.helper import reshape_data
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support, roc_auc_score
 
 class TickerPredictorModel:
     """ Parameter Initialization """
     def __init__(self, parameters, api_key):
         self.training_split = parameters["training_split"] 
         self.symbol = parameters["symbol"]
+        if len(self.symbol) == 0:
+            raise ValueError("Please provide a valid ticker symbol.")
         self.epochs = parameters["epochs"]
         self.batch_size = parameters["batch_size"]
         self.start_date = parameters["start_date"]
@@ -28,11 +31,11 @@ class TickerPredictorModel:
     
     """ Fetch data from API """
     def fetch_data(self):
-        self.extracted_technical = extract_technical_indicators(api_key)
-        self.extracted_income = extract_income_statement(api_key)
+        self.extracted_technical = extract_technical_indicators(api_key, self.symbol)
+        self.extracted_income = extract_income_statement(api_key, self.symbol)
         self.ema, self.rsi, self.aroon_up, self.aroon_down = self.extracted_technical["EMA"], self.extracted_technical["RSI"], self.extracted_technical["AROON_UP"], self.extracted_technical["AROON_DOWN"]
-        self.stock_data = extract_prices(api_key)
-        self.extracted_cash_flow = extract_cash_flow_statement(api_key)
+        self.stock_data = extract_prices(api_key, self.symbol)
+        self.extracted_cash_flow = extract_cash_flow_statement(api_key, self.symbol)
         self.extracted_income.update(self.extracted_cash_flow)
     
     """ Generate data for training """
@@ -113,13 +116,16 @@ class TickerPredictorModel:
         self.model.fit([self.X_train, self.X_single_train], self.y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, validation_split=0.1)
     
     def evaluate(self):
-        # 6. Evaluate the model
+        """ Evaluate the model using MSE and Up/Down accuracy"""
+
+        output = {}
         y_pred = self.model.predict([self.X_test, self.X_single_test])
         y_pred_original = y_pred # Convert back to original price scale
         y_test_original = self.y_test
 
         # Calculate MSE or any other error metric
         mse = np.mean(np.square(y_pred_original - y_test_original))
+        output["MSE"] = mse
         print(f'Mean Squared Error on Test Data: {mse}')
 
         self.y_train_pred = self.model.predict([self.X_train, self.X_single_train])
@@ -127,13 +133,45 @@ class TickerPredictorModel:
 
         # Directional accuracy
         def directional_accuracy(y_true, y_pred):
+            # Calculate the directional change for true and predicted values
             direction_true = np.sign(y_true[1:] - y_true[:-1])
             direction_pred = np.sign(y_pred[1:] - y_true[:-1])
-            return np.mean(direction_true == direction_pred)
+            
+            # Adjust zeros to 1 for both true and predicted directions
+            direction_true[direction_true == 0] = 1
+            direction_pred[direction_pred == 0] = 1
+            
+            return direction_true, direction_pred
+        
+        direction_true, direction_pred = directional_accuracy(y_test_original, y_pred_original)
+        
+        # Accuracy
+        self.dir_acc = accuracy_score(direction_true, direction_pred)
+        print(f'Accuracy: {self.dir_acc * 100:.2f}%')
 
-        self.dir_acc = directional_accuracy(y_test_original, y_pred_original)
-        print(f'Directional Accuracy on Test Data: {self.dir_acc * 100:.2f}%')
-    
+        output["Accuracy"] = self.dir_acc
+
+        # Confusion Matrix
+        cm = confusion_matrix(direction_true, direction_pred)
+        print(f'Confusion Matrix:\n{cm}')
+        output["Confusion Matrix"] = cm
+
+        # Precision, Recall, F1 Score
+        precision, recall, f1, _ = precision_recall_fscore_support(direction_true, direction_pred, average='binary')
+        print(f'Precision: {precision:.2f}\nRecall: {recall:.2f}\nF1 Score: {f1:.2f}')
+        output["Precision"] = round(precision, 2)
+        output["Recall"] = round(precision, 2)
+        output["F1 Score"] = round(f1, 2)
+        return output
+
+
+    def prepare_plot(self):
+        # Combining data for plotting
+        output = {}
+        output["Actual Values"] = np.concatenate([self.y_train, self.y_test])
+        output["Predicted Values"] = np.concatenate([self.y_train_pred, self.y_test_pred])
+        return output
+
     def plot_evaluation(self):
         # Combining data for plotting
         actual_values = np.concatenate([self.y_train, self.y_test])
@@ -158,6 +196,7 @@ class TickerPredictorModel:
         plt.show()
     
     def future_projection(self):
+        output = {}
         single_factor = np.zeros((1, 1 + len(self.extracted_income.keys())))
         multifactor = np.zeros((1, N, len(self.extracted_technical.keys())))
         for i in range(len(self.technical_data_order)):
@@ -171,12 +210,15 @@ class TickerPredictorModel:
                 single_factor[0, i] = self.scalers_x[key].transform(np.array(self.extracted_income[key][-1][1]).reshape((1, -1))).reshape(1)
             else:
                 single_factor[0, i] = self.scalers_x[key].transform(np.array(self.extracted_cash_flow[key][-1][1]).reshape((1, -1))).reshape(1)
-        future_price = float(self.model.predict([multifactor, single_factor]))
-        print(f"Predicted future price: {future_price}")
-        print(f"Current price: {self.stock_data[-1][1]}")
-        print(f"Up/Down Prediction: {'Up' if future_price > self.stock_data[-1][1] else 'Down'}")
-        print(f"Backtested Accuracy: {self.dir_acc * 100:.2f}%")
-        return future_price
+        output["Future Price"] = float(self.model.predict([multifactor, single_factor]))
+        output["Current Price"] = self.stock_data[-1][1]
+        output["Dir Prediction"] = 'Up' if output["Future Price"] > self.stock_data[-1][1] else 'Down'
+        # print(f"Ticker: {self.symbol}")
+        # print(f"Predicted future price: {future_price}")
+        # print(f"Current price: {self.stock_data[-1][1]}")
+        # print(f"Up/Down Prediction: {'Up' if future_price > self.stock_data[-1][1] else 'Down'}")
+        # print(f"Backtested Accuracy: {self.dir_acc * 100:.2f}%")
+        return output
     
 
 
@@ -194,14 +236,14 @@ parameters = {
     "k": K
 }
 
-model = TickerPredictorModel(parameters, api_key)
+# model = TickerPredictorModel(parameters, api_key)
 
-model.fetch_data()
-model.generate_preprocess_data()
-model.construct_model()
-model.train()
-model.evaluate()
-model.plot_evaluation()
-print(model.future_projection())
+# model.fetch_data()
+# model.generate_preprocess_data()
+# model.construct_model()
+# model.train()
+# model.evaluate()
+# model.plot_evaluation()
+# print(model.future_projection())
 
 print("debugger")
