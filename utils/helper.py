@@ -48,3 +48,6 @@ def convert_back(date):
     if day < 10:
         day = f"0{day}"
     return f"{year}-{month}-{day}"
+
+def reshape_data(data):
+    return data.reshape(data.shape[0], data.shape[1], 1)
