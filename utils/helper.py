@@ -33,3 +33,18 @@ def fetch_data_from_api(function, symbol=None, interval=None, time_period=None, 
         
     response = requests.get(base_url, params=params)
     return response.json()
+
+def convert(date):
+    year, month, day = date.split("-")
+    year, month, day = int(year), int(month), int(day)
+    return year * 365 + month * 30 + day
+
+def convert_back(date):
+    year = date // 365
+    month = (date % 365) // 30
+    day = (date % 365) % 30
+    if month < 10:
+        month = f"0{month}"
+    if day < 10:
+        day = f"0{day}"
+    return f"{year}-{month}-{day}"

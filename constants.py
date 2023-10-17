@@ -35,3 +35,14 @@ technical_indicators = {
 income_statement_indicators = ['netIncome', 'ebitda', 'grossProfit', 'operatingExpenses']
 
 cash_flow_indicators = ['operatingCashflow', 'capitalExpenditures', 'cashflowFromInvestment', 'cashflowFromFinancing']
+
+WINDOW_SIZE = 3
+FORECAST_LENGTH = 1
+TRAINING_SPLIT = 0.90
+SYMBOL = "CVX"
+EPOCHS = 55
+BATCH_SIZE = 16
+START_DATE = "2017-01-01"
+END_DATE = "2023-01-01"
+N = 30 # 30 last data points
+K = 1 # Forecast Length
