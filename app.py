@@ -2,7 +2,6 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                              QWidget, QLabel, QFrame, QLineEdit, QPushButton, QFormLayout, QTableWidget, QHeaderView, QTableWidgetItem)
 from PyQt6.QtCore import Qt, QRunnable, QThreadPool, pyqtSignal, QObject, pyqtSlot
-
 from constants import START_DATE, END_DATE, BATCH_SIZE
 from inference import TickerPredictorModel
 import os
@@ -10,22 +9,8 @@ import matplotlib.pyplot as plt
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.figure import Figure
-
-class WorkerSignals(QObject):
-    finished = pyqtSignal(dict)
-
-class Worker(QRunnable):
-    def __init__(self, fn, *args, **kwargs):
-        super().__init__()
-        self.fn = fn
-        self.args = args
-        self.kwargs = kwargs
-        self.signals = WorkerSignals()
-
-    def run(self):
-        result = self.fn(*self.args, **self.kwargs)
-        self.signals.finished.emit(result)
+import matplotlib.dates as mdates
+from utils.worker import Worker
 
 class TickerPredictorApp(QMainWindow):
     def __init__(self):
@@ -102,7 +87,7 @@ class TickerPredictorApp(QMainWindow):
         self.metrics_table.setHorizontalHeaderLabels(['Metric', 'Value'])
         self.metrics_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.metrics_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.metrics_table.setRowCount(9)  # Since you have 9 metrics
+        self.metrics_table.setRowCount(8)  # Since you have 9 metrics
 
         
         right_layout = QVBoxLayout()
@@ -158,6 +143,8 @@ class TickerPredictorApp(QMainWindow):
         output = model.evaluate()
         output.update(model.prepare_plot())
         output.update(model.future_projection())
+
+        self.raw_dates = model.raw_dates
         return output
     
     @pyqtSlot(dict)
@@ -167,26 +154,34 @@ class TickerPredictorApp(QMainWindow):
         self.canvas.figure.clear()
         ax = self.canvas.figure.subplots()
         
-        # Plotting the actual values
+        # Convert raw_dates to a format matplotlib understands
+        x_dates = [mdates.datestr2num(date) for date in self.raw_dates]
+        
+        # Plotting using x_dates as x-values
         actual_values = result["Actual Values"]
         predicted_values = result["Predicted Values"]
         
-        ax.plot(actual_values, label="Actual Values", color='blue')
-        ax.plot(predicted_values, label="Predicted Values", color='red', alpha=0.6)
+        ax.plot(x_dates, actual_values, label="Actual Values", color='blue')
+        ax.plot(x_dates, predicted_values, label="Predicted Values", color='red', alpha=0.6)
         
-        # You might need to adjust this if you're not passing train_length from the output
-        train_length = len(actual_values) * 0.90  # Assuming 90% train-test split
-        ax.axvline(x=train_length, color='gray', linestyle='--', label='Train-Test Split')
+        # Adjusting for train-test split
+        train_length = int(len(x_dates) * float(self.text_inputs["Training Split"].text()))
+        ax.axvline(x=x_dates[train_length], color='gray', linestyle='--', label='Train-Test Split')
+        
+        # Setting date format for x-axis
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())  # Adjust as needed
+        ax.figure.autofmt_xdate()  # Auto adjust date labels to prevent overlap
         
         ax.set_title("Actual vs Predicted Stock Prices")
-        ax.set_xlabel("Time")
+        ax.set_xlabel("Date")
         ax.set_ylabel("Stock Price")
         ax.legend()
         
         self.canvas.draw()
         
         # Update the metrics labels
-        metrics = ["MSE", "Accuracy", "Confusion Matrix", "Precision", "Recall", "F1 Score", "Future Price", "Current Price", "Dir Prediction"]
+        metrics = ["MSE", "Accuracy", "Precision", "Recall", "F1 Score", "Future Price", "Current Price", "Dir Prediction"]
         for i, key in enumerate(metrics):
             self.metrics_table.setItem(i, 0, QTableWidgetItem(key))
             self.metrics_table.setItem(i, 1, QTableWidgetItem(str(result[key])))

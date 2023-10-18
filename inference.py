@@ -8,10 +8,10 @@ from sklearn.preprocessing import MinMaxScaler
 from constants import income_statement_indicators
 from keras.regularizers import l1_l2
 from utils.data_extract import extract_technical_indicators, extract_prices, extract_income_statement, extract_cash_flow_statement
-from constants import TRAINING_SPLIT, SYMBOL, EPOCHS, BATCH_SIZE, START_DATE, END_DATE, N, WINDOW_SIZE, K
+from constants import BATCH_SIZE, N
 from utils.data_generation import generate_technical_data, generate_single_factor_data
 from utils.helper import reshape_data
-from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support, roc_auc_score
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 
 class TickerPredictorModel:
     """ Parameter Initialization """
@@ -31,17 +31,17 @@ class TickerPredictorModel:
     
     """ Fetch data from API """
     def fetch_data(self):
-        self.extracted_technical = extract_technical_indicators(api_key, self.symbol)
-        self.extracted_income = extract_income_statement(api_key, self.symbol)
+        self.extracted_technical = extract_technical_indicators(self.api_key, self.symbol)
+        self.extracted_income = extract_income_statement(self.api_key, self.symbol)
         self.ema, self.rsi, self.aroon_up, self.aroon_down = self.extracted_technical["EMA"], self.extracted_technical["RSI"], self.extracted_technical["AROON_UP"], self.extracted_technical["AROON_DOWN"]
-        self.stock_data = extract_prices(api_key, self.symbol)
-        self.extracted_cash_flow = extract_cash_flow_statement(api_key, self.symbol)
+        self.stock_data = extract_prices(self.api_key, self.symbol)
+        self.extracted_cash_flow = extract_cash_flow_statement(self.api_key, self.symbol)
         self.extracted_income.update(self.extracted_cash_flow)
     
     """ Generate data for training """
     def generate_preprocess_data(self):
         # Generating data using window sizing for technical indicators, and extracting fundamental data
-        generated_data, current_price_data, price_data = generate_technical_data(self.extracted_technical, self.stock_data)
+        generated_data, current_price_data, price_data, self.raw_dates = generate_technical_data(self.extracted_technical, self.stock_data, self.n)
         self.generated_fundamental = generate_single_factor_data(self.extracted_income)
         for key in generated_data: generated_data[key] = reshape_data(np.array(generated_data[key]))
         current_price_data_np, price_data_np = np.array(current_price_data), np.array(price_data)
@@ -73,7 +73,7 @@ class TickerPredictorModel:
             self.generated_fundamental[key] = self.scalers_x[key].fit_transform(self.generated_fundamental[key].reshape(-1, 1))
 
         # Split the data into training and testing sets (based on parameter)
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(technical_data_3d, price_data_normalized, test_size=1-TRAINING_SPLIT, shuffle=False)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(technical_data_3d, price_data_normalized, test_size=1-self.training_split, shuffle=False)
 
         # Including single factor price into the generated fundamental
         self.generated_fundamental['currentPrice'] = price_data_normalized
@@ -82,7 +82,7 @@ class TickerPredictorModel:
 
         train_test_single_factor_splits = {}
         for key in self.generated_fundamental:
-            train_test_single_factor_splits[key] = train_test_split(self.generated_fundamental[key], test_size=1-TRAINING_SPLIT, shuffle=False)
+            train_test_single_factor_splits[key] = train_test_split(self.generated_fundamental[key], test_size=1-self.training_split, shuffle=False)
 
         self.X_single_train = np.concatenate([train_test_single_factor_splits[key][0] for key in self.fundamental_order if type(key) == str], axis=1)
         self.X_single_test = np.concatenate([train_test_single_factor_splits[key][1] for key in self.fundamental_order if type(key) == str], axis=1)
@@ -97,7 +97,6 @@ class TickerPredictorModel:
         lstm_tech = LSTM(35)(lstm_tech)
         lstm_tech_out = Dropout(0.2)(lstm_tech)
 
-        # Current price input branch
         # Single Factor Input Branch
         single_fact_input = Input(shape=(len(self.generated_fundamental.keys()),))
         dense_single = Dense(16, activation='relu', kernel_regularizer=l1_l2(l1=0.01, l2=0.01))(single_fact_input)
@@ -113,7 +112,7 @@ class TickerPredictorModel:
         self.model.compile(optimizer='adam', loss='mean_squared_error')
     
     def train(self):
-        self.model.fit([self.X_train, self.X_single_train], self.y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, validation_split=0.1)
+        self.model.fit([self.X_train, self.X_single_train], self.y_train, epochs=self.epochs, batch_size=BATCH_SIZE, validation_split=0.1)
     
     def evaluate(self):
         """ Evaluate the model using MSE and Up/Down accuracy"""
@@ -126,7 +125,6 @@ class TickerPredictorModel:
         # Calculate MSE or any other error metric
         mse = np.mean(np.square(y_pred_original - y_test_original))
         output["MSE"] = mse
-        print(f'Mean Squared Error on Test Data: {mse}')
 
         self.y_train_pred = self.model.predict([self.X_train, self.X_single_train])
         self.y_test_pred = self.model.predict([self.X_test, self.X_single_test])
@@ -147,18 +145,16 @@ class TickerPredictorModel:
         
         # Accuracy
         self.dir_acc = accuracy_score(direction_true, direction_pred)
-        print(f'Accuracy: {self.dir_acc * 100:.2f}%')
 
         output["Accuracy"] = self.dir_acc
 
         # Confusion Matrix
         cm = confusion_matrix(direction_true, direction_pred)
-        print(f'Confusion Matrix:\n{cm}')
+        print(cm)
         output["Confusion Matrix"] = cm
 
         # Precision, Recall, F1 Score
         precision, recall, f1, _ = precision_recall_fscore_support(direction_true, direction_pred, average='binary')
-        print(f'Precision: {precision:.2f}\nRecall: {recall:.2f}\nF1 Score: {f1:.2f}')
         output["Precision"] = round(precision, 2)
         output["Recall"] = round(precision, 2)
         output["F1 Score"] = round(f1, 2)
@@ -201,7 +197,7 @@ class TickerPredictorModel:
         multifactor = np.zeros((1, N, len(self.extracted_technical.keys())))
         for i in range(len(self.technical_data_order)):
             key = self.technical_data_order[i]
-            multifactor[0, :, i] = self.scalers_x[key].transform(np.array([value for _, value in self.extracted_technical[key][-N:]]).reshape((1, -1))).reshape(N)
+            multifactor[0, :, i] = self.scalers_x[key].transform(np.array([value for _, value in self.extracted_technical[key][-self.n:]]).reshape((1, -1))).reshape(self.n)
         for i in range(len(self.fundamental_order)):
             key = self.fundamental_order[i]
             if key == "currentPrice":
@@ -213,37 +209,4 @@ class TickerPredictorModel:
         output["Future Price"] = float(self.model.predict([multifactor, single_factor]))
         output["Current Price"] = self.stock_data[-1][1]
         output["Dir Prediction"] = 'Up' if output["Future Price"] > self.stock_data[-1][1] else 'Down'
-        # print(f"Ticker: {self.symbol}")
-        # print(f"Predicted future price: {future_price}")
-        # print(f"Current price: {self.stock_data[-1][1]}")
-        # print(f"Up/Down Prediction: {'Up' if future_price > self.stock_data[-1][1] else 'Down'}")
-        # print(f"Backtested Accuracy: {self.dir_acc * 100:.2f}%")
         return output
-    
-
-
-api_key = os.environ['ALPHA_VANTAGE_API_KEY']
-
-parameters = {
-    "training_split": TRAINING_SPLIT,
-    "symbol": SYMBOL,
-    "epochs": EPOCHS,
-    "batch_size": BATCH_SIZE,
-    "start_date": START_DATE,
-    "end_date": END_DATE,
-    "n": N,
-    "window_size": WINDOW_SIZE,
-    "k": K
-}
-
-# model = TickerPredictorModel(parameters, api_key)
-
-# model.fetch_data()
-# model.generate_preprocess_data()
-# model.construct_model()
-# model.train()
-# model.evaluate()
-# model.plot_evaluation()
-# print(model.future_projection())
-
-print("debugger")

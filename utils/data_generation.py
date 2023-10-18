@@ -1,15 +1,15 @@
-from constants import START_DATE, END_DATE, WINDOW_SIZE, K, N
+from constants import START_DATE, END_DATE, WINDOW_SIZE, K
 from utils.helper import convert
 from collections import defaultdict
 
-def generate_technical_data(extracted_data, stock_data):
+def generate_technical_data(extracted_data, stock_data, N):
     generated_data = {}
     data_idx = {}
     for key in extracted_data:
         data_idx[key] = 0
         generated_data[key] = []
     
-    price_idx, price_data, current_price_data = 0, [], []
+    price_idx, price_data, current_price_data, raw_dates = 0, [], [], []
     current_day = convert(START_DATE)
     end_day = convert(END_DATE)
     while current_day < end_day:
@@ -25,9 +25,10 @@ def generate_technical_data(extracted_data, stock_data):
         
         current_price_data.append(stock_data[price_idx - K][1])
         price_data.append(stock_data[price_idx][1])
+        raw_dates.append(stock_data[price_idx][0])
 
         current_day += WINDOW_SIZE
-    return generated_data, current_price_data, price_data
+    return generated_data, current_price_data, price_data, raw_dates
 
 def generate_single_factor_data(extracted_fundamental):
     fundamental_idx = defaultdict(lambda: 0)
