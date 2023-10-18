@@ -1,13 +1,15 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
-                             QWidget, QLabel, QFrame, QLineEdit, QPushButton, QFormLayout)
+                             QWidget, QLabel, QFrame, QLineEdit, QPushButton, QFormLayout, QTableWidget, QHeaderView, QTableWidgetItem)
 from PyQt6.QtCore import Qt, QRunnable, QThreadPool, pyqtSignal, QObject, pyqtSlot
+
 from constants import START_DATE, END_DATE, BATCH_SIZE
 from inference import TickerPredictorModel
 import os
 import matplotlib.pyplot as plt
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 
 class WorkerSignals(QObject):
@@ -68,8 +70,10 @@ class TickerPredictorApp(QMainWindow):
         self.text_inputs = {}
         fields = ["Ticker", "Training Split", "Epochs", "Stride", "Window Length", "Forecast Length"]
         for field in fields:
+            label_widget = QLabel(f"{field}:")
+            label_widget.setProperty("formLabel", True)  # Setting the property
             input_field = QLineEdit(self)
-            form_layout.addRow(f"{field}:", input_field)
+            form_layout.addRow(label_widget, input_field)
             self.text_inputs[field] = input_field
         
         self.text_inputs["Training Split"].setText("0.90")
@@ -79,29 +83,33 @@ class TickerPredictorApp(QMainWindow):
         self.text_inputs["Forecast Length"].setText("1")
 
         # Train button
-        train_btn = QPushButton("Train", self)
-        train_btn.clicked.connect(self.on_train_click)
+        self.train_btn = QPushButton("Train", self)
+        self.train_btn.clicked.connect(self.on_train_click)
         
         # Horizontal layout for the two sections
         left_layout = QVBoxLayout()
         left_layout.addWidget(params_label)
         left_layout.addLayout(form_layout)
         left_layout.addStretch(1)
-        left_layout.addWidget(train_btn)
+        left_layout.addWidget(self.train_btn)
 
         # Placeholder for the graph and metrics
-        
         self.canvas = FigureCanvas(plt.figure())
+        self.navi_toolbar = NavigationToolbar(self.canvas, self)
+
+        self.metrics_table = QTableWidget(self)
+        self.metrics_table.setColumnCount(2)  # One column for the metric name and another for its value
+        self.metrics_table.setHorizontalHeaderLabels(['Metric', 'Value'])
+        self.metrics_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.metrics_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.metrics_table.setRowCount(9)  # Since you have 9 metrics
+
         
         right_layout = QVBoxLayout()
         right_layout.addWidget(analytics_label)
         right_layout.addWidget(self.canvas)
-        self.metrics_labels = {}
-
-        for key in ["MSE", "Accuracy", "Confusion Matrix", "Precision", "Recall", "F1 Score", "Future Price", "Current Price", "Dir Prediction"]:
-            label = QLabel(self)
-            right_layout.addWidget(label)
-            self.metrics_labels[key] = label
+        right_layout.addWidget(self.navi_toolbar)
+        right_layout.addWidget(self.metrics_table)
 
         h_layout = QHBoxLayout()
         h_layout.addLayout(left_layout, stretch=2)
@@ -117,6 +125,7 @@ class TickerPredictorApp(QMainWindow):
         self.setCentralWidget(central_widget)
     
     def on_train_click(self):
+        self.train_btn.setDisabled(True)
         worker = Worker(self.run_model_instance, 
                         ticker=self.text_inputs["Ticker"].text(), 
                         training_split=self.text_inputs["Training Split"].text(), 
@@ -154,6 +163,7 @@ class TickerPredictorApp(QMainWindow):
     @pyqtSlot(dict)
     def on_model_done(self, result):
         # Update the canvas with the new plot
+        self.train_btn.setDisabled(False)
         self.canvas.figure.clear()
         ax = self.canvas.figure.subplots()
         
@@ -176,8 +186,10 @@ class TickerPredictorApp(QMainWindow):
         self.canvas.draw()
         
         # Update the metrics labels
-        for key, label in self.metrics_labels.items():
-            label.setText(f"{key}: {result[key]}")
+        metrics = ["MSE", "Accuracy", "Confusion Matrix", "Precision", "Recall", "F1 Score", "Future Price", "Current Price", "Dir Prediction"]
+        for i, key in enumerate(metrics):
+            self.metrics_table.setItem(i, 0, QTableWidgetItem(key))
+            self.metrics_table.setItem(i, 1, QTableWidgetItem(str(result[key])))
 
 
 if __name__ == "__main__":

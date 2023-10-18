@@ -19,7 +19,7 @@ def generate_technical_data(extracted_data, stock_data):
                 data_idx[key] += 1
             generated_data[key].append([value for _, value in extracted_data[key][data_idx[key]-N:data_idx[key]]])
 
-        # Fundamental Indicators
+        # Current Price
         while convert(stock_data[price_idx][0]) < current_day + K:
             price_idx += 1
         

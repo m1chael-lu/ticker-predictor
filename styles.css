@@ -8,12 +8,18 @@ QLabel[title="true"] {
     font-size: 24px;
     font-weight: bold;
     padding: 20px;
+    color: black;
+}
+
+QLabel[formLabel="true"] {
+    color: black;
 }
 
 /* Section Title Styles */
 QLabel[sectionTitle="true"] {
     font-size: 20px;
     padding: 10px;
+    color: black;
 }
 
 /* Divider Styles */
@@ -32,10 +38,7 @@ QLineEdit {
 
 /* Button Styles */
 QPushButton {
-    background-color: #68c6b8;
-    hover {
-        background-color: #55ab9e;
-    }
+    background-color: #87bdd8;
     border: none;
     color: white;
     padding: 10px 20px;
@@ -47,5 +50,90 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #45a049;
+    background-color: #b2d9ed;
 }
+
+QPushButton:disabled {
+    background-color: #c0c0c0;  /* Or any color indicating "disabled" */
+    color: #888;  /* A muted color for the text */
+    cursor: not-allowed;
+}
+
+/* Base table style */
+QTableWidget {
+    border: 1px solid #d9d9d9;
+    gridline-color: #d9d9d9;
+    selection-background-color: #87bdd8; 
+    selection-color: black;
+    background-color: #f9f9f9;
+}
+
+/* Table headers */
+QTableWidget::item:disabled {
+    background-color: white;
+}
+
+/* Table headers */
+QHeaderView::section {
+    background-color: #d9d9d9;
+    padding: 4px;
+    font-weight: bold;
+    border: 1px solid #d9d9d9;
+    text-align: center;
+    color: black;   
+}
+
+QHeaderView::section:horizontal {
+    border-top: none;
+    border-right: 1px solid white;
+}
+
+QHeaderView::section:vertical {
+    border-left: none;
+    border-bottom: 1px solid white;
+}
+
+/* Table items */
+QTableWidget::item {
+    padding: 5px;
+    border: 1px solid #d9d9d9;
+    color: black; 
+}
+
+QTableWidget::item:selected {
+    background-color: #87bdd8; 
+}
+
+/* Scrollbars */
+QScrollBar:vertical {
+    background: #f9f9f9;
+    width: 12px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #d9d9d9;
+    min-height: 30px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+QScrollBar:horizontal {
+    background: #f9f9f9;
+    height: 12px;
+    margin: 0;
+}
+
+QScrollBar::handle:horizontal {
+    background: #d9d9d9;
+    min-width: 30px;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    border: none;
+    background: none;
+}
+
