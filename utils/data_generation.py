@@ -24,12 +24,12 @@ def generate_technical_data(
     while current_day < end_day:
         # Technical Indicators
         for key in extracted_data:
-            while convert(extracted_data[key][data_idx[key]][0]) < current_day:
+            while data_idx[key] < len(extracted_data[key]) and convert(extracted_data[key][data_idx[key]][0]) < current_day:
                 data_idx[key] += 1
             generated_data[key].append([value for _, value in extracted_data[key][data_idx[key]-N:data_idx[key]]])
 
         # Current Price
-        while convert(stock_data[price_idx][0]) < current_day + K:
+        while price_idx < len(stock_data) and convert(stock_data[price_idx][0]) < current_day + K:
             price_idx += 1
         
         current_price_data.append(stock_data[price_idx - K][1])
@@ -52,7 +52,7 @@ def generate_single_factor_data(
     while current_day < end_day:
         # Income Statement Indicators
         for key in extracted_fundamental:
-            while convert(extracted_fundamental[key][fundamental_idx[key]][0]) < current_day:
+            while fundamental_idx[key] < len(extracted_fundamental[key]) and convert(extracted_fundamental[key][fundamental_idx[key]][0]) < current_day:
                 fundamental_idx[key] += 1
             generated_fundamental[key].append(extracted_fundamental[key][fundamental_idx[key] - K][1])
         current_day += WINDOW_SIZE

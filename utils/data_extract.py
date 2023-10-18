@@ -67,6 +67,4 @@ def extract_news(api_key, SYMBOL):
                 break
     dates = [s[0] for s in sentiment_by_date]
     values = [100 * s[1] for s in sentiment_by_date]
-
-
     return article_data
