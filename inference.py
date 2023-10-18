@@ -12,10 +12,12 @@ from constants import BATCH_SIZE, N
 from utils.data_generation import generate_technical_data, generate_single_factor_data
 from utils.helper import reshape_data
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
+from typing import Any, Dict, List, Tuple, Union
 
 class TickerPredictorModel:
-    """ Parameter Initialization """
-    def __init__(self, parameters, api_key):
+    def __init__(self, parameters: Dict[str, Any], api_key: str):
+        """Initialize the TickerPredictorModel with provided parameters and API key."""
+
         self.training_split = parameters["training_split"] 
         self.symbol = parameters["symbol"]
         if len(self.symbol) == 0:
@@ -29,18 +31,18 @@ class TickerPredictorModel:
         self.k = parameters["k"]
         self.api_key = api_key
     
-    """ Fetch data from API """
-    def fetch_data(self):
+    def fetch_data(self) -> None:
+        """Fetch data from API and store relevant extracted information."""
         self.extracted_technical = extract_technical_indicators(self.api_key, self.symbol)
         self.extracted_income = extract_income_statement(self.api_key, self.symbol)
-        self.ema, self.rsi, self.aroon_up, self.aroon_down = self.extracted_technical["EMA"], self.extracted_technical["RSI"], self.extracted_technical["AROON_UP"], self.extracted_technical["AROON_DOWN"]
         self.stock_data = extract_prices(self.api_key, self.symbol)
         self.extracted_cash_flow = extract_cash_flow_statement(self.api_key, self.symbol)
         self.extracted_income.update(self.extracted_cash_flow)
     
-    """ Generate data for training """
-    def generate_preprocess_data(self):
-        # Generating data using window sizing for technical indicators, and extracting fundamental data
+    def generate_preprocess_data(self) -> None:
+        """Generate and preprocess data for training."""
+        
+        # Generating data for technical indicators, price, and fundamental indicators
         generated_data, current_price_data, price_data, self.raw_dates = generate_technical_data(self.extracted_technical, self.stock_data, self.n)
         self.generated_fundamental = generate_single_factor_data(self.extracted_income)
         for key in generated_data: generated_data[key] = reshape_data(np.array(generated_data[key]))
@@ -77,9 +79,9 @@ class TickerPredictorModel:
 
         # Including single factor price into the generated fundamental
         self.generated_fundamental['currentPrice'] = price_data_normalized
-
         self.fundamental_order.append("currentPrice")
 
+        # Creating train-test splits
         train_test_single_factor_splits = {}
         for key in self.generated_fundamental:
             train_test_single_factor_splits[key] = train_test_split(self.generated_fundamental[key], test_size=1-self.training_split, shuffle=False)
@@ -87,7 +89,9 @@ class TickerPredictorModel:
         self.X_single_train = np.concatenate([train_test_single_factor_splits[key][0] for key in self.fundamental_order if type(key) == str], axis=1)
         self.X_single_test = np.concatenate([train_test_single_factor_splits[key][1] for key in self.fundamental_order if type(key) == str], axis=1)
 
-    def construct_model(self):
+    def construct_model(self) -> None:
+        """Construct the hybrid LSTM model for stock price training/prediction."""
+
         # Technical indicators input branch
         input_technical = Input(shape=(self.X_train.shape[1], self.X_train.shape[2]))
         lstm_tech = LSTM(35, return_sequences=True, kernel_initializer='he_normal')(input_technical)
@@ -111,18 +115,20 @@ class TickerPredictorModel:
         self.model = Model(inputs=[input_technical, single_fact_input], outputs=output)
         self.model.compile(optimizer='adam', loss='mean_squared_error')
     
-    def train(self):
+    def train(self) -> None:
+        """Train the model on the training dataset."""
         self.model.fit([self.X_train, self.X_single_train], self.y_train, epochs=self.epochs, batch_size=BATCH_SIZE, validation_split=0.1)
     
-    def evaluate(self):
-        """ Evaluate the model using MSE and Up/Down accuracy"""
+    def evaluate(self) -> Dict[str, Union[float, np.ndarray]]:
+        """ Evaluate the model using MSE and Up/Down accuracy/"""
 
+        # Creating model predictions
         output = {}
         y_pred = self.model.predict([self.X_test, self.X_single_test])
-        y_pred_original = y_pred # Convert back to original price scale
+        y_pred_original = y_pred
         y_test_original = self.y_test
 
-        # Calculate MSE or any other error metric
+        # Calculate MSE
         mse = np.mean(np.square(y_pred_original - y_test_original))
         output["MSE"] = mse
 
@@ -145,13 +151,12 @@ class TickerPredictorModel:
         
         # Accuracy
         self.dir_acc = accuracy_score(direction_true, direction_pred)
-
         output["Accuracy"] = self.dir_acc
 
         # Confusion Matrix
         cm = confusion_matrix(direction_true, direction_pred)
-        print(cm)
         output["Confusion Matrix"] = cm
+        print(cm)
 
         # Precision, Recall, F1 Score
         precision, recall, f1, _ = precision_recall_fscore_support(direction_true, direction_pred, average='binary')
@@ -161,14 +166,16 @@ class TickerPredictorModel:
         return output
 
 
-    def prepare_plot(self):
+    def prepare_plot(self) -> Dict[str, np.ndarray]:
         # Combining data for plotting
         output = {}
         output["Actual Values"] = np.concatenate([self.y_train, self.y_test])
         output["Predicted Values"] = np.concatenate([self.y_train_pred, self.y_test_pred])
         return output
 
-    def plot_evaluation(self):
+    def plot_evaluation(self) -> None:
+        """Visualize actual vs. predicted stock prices on a plot."""
+
         # Combining data for plotting
         actual_values = np.concatenate([self.y_train, self.y_test])
         predicted_values = np.concatenate([self.y_train_pred, self.y_test_pred])
@@ -191,7 +198,8 @@ class TickerPredictorModel:
         plt.legend()
         plt.show()
     
-    def future_projection(self):
+    def future_projection(self) -> Dict[str, Union[float, str]]:
+        """Project future stock prices based on model predictions."""
         output = {}
         single_factor = np.zeros((1, 1 + len(self.extracted_income.keys())))
         multifactor = np.zeros((1, N, len(self.extracted_technical.keys())))

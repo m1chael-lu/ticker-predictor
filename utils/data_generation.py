@@ -1,8 +1,17 @@
 from constants import START_DATE, END_DATE, WINDOW_SIZE, K
 from utils.helper import convert
 from collections import defaultdict
+from typing import Dict, List, Union, Tuple
 
-def generate_technical_data(extracted_data, stock_data, N):
+
+def generate_technical_data(
+    extracted_data: Dict[str, List[Tuple[str, float]]], 
+    stock_data: List[Tuple[str, float]], 
+    N: int
+) -> Tuple[Dict[str, List[float]], List[float], List[float], List[str]]:
+    """
+    Generate technical data over the defined time range.
+    """
     generated_data = {}
     data_idx = {}
     for key in extracted_data:
@@ -30,7 +39,12 @@ def generate_technical_data(extracted_data, stock_data, N):
         current_day += WINDOW_SIZE
     return generated_data, current_price_data, price_data, raw_dates
 
-def generate_single_factor_data(extracted_fundamental):
+def generate_single_factor_data(
+    extracted_fundamental: Dict[str, List[Tuple[str, float]]]
+) -> Dict[str, List[float]]:
+    """
+    Generate single factor data over the defined time range.
+    """
     fundamental_idx = defaultdict(lambda: 0)
     generated_fundamental = defaultdict(lambda: [])
     current_day = convert(START_DATE)
