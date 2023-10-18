@@ -12,7 +12,7 @@ from constants import BATCH_SIZE, N
 from utils.data_generation import generate_technical_data, generate_single_factor_data
 from utils.helper import reshape_data
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, Union
 
 class TickerPredictorModel:
     def __init__(self, parameters: Dict[str, Any], api_key: str):
@@ -49,10 +49,8 @@ class TickerPredictorModel:
         current_price_data_np, price_data_np = np.array(current_price_data), np.array(price_data)
         for key in self.generated_fundamental: self.generated_fundamental[key] = np.array(self.generated_fundamental[key])
 
-        # Normalize data
-        self.scalers_x = {}
-
         # Create a MinMaxScaler for each feature
+        self.scalers_x = {}
         for key in generated_data:
             self.scalers_x[key] = MinMaxScaler(feature_range=(0, 1))
 
@@ -64,20 +62,20 @@ class TickerPredictorModel:
 
         # Reshape current_price_data for concatenation
         current_price_data_np = current_price_data_np[:, np.newaxis]
-
         price_data_normalized = price_data_np.reshape(-1, 1)
 
+        # Store the order of the fundamental indicators for later use
         self.fundamental_order = [key for key in self.generated_fundamental]
         for key in self.fundamental_order:
+            # Scaling by feature
             self.scalers_x[key] = MinMaxScaler(feature_range=(0, 1))
-
         for key in self.fundamental_order:
             self.generated_fundamental[key] = self.scalers_x[key].fit_transform(self.generated_fundamental[key].reshape(-1, 1))
 
         # Split the data into training and testing sets (based on parameter)
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(technical_data_3d, price_data_normalized, test_size=1-self.training_split, shuffle=False)
 
-        # Including single factor price into the generated fundamental
+        # Including single factor price into the generated fundamental single factor data
         self.generated_fundamental['currentPrice'] = price_data_normalized
         self.fundamental_order.append("currentPrice")
 
@@ -86,6 +84,7 @@ class TickerPredictorModel:
         for key in self.generated_fundamental:
             train_test_single_factor_splits[key] = train_test_split(self.generated_fundamental[key], test_size=1-self.training_split, shuffle=False)
 
+        # Concatenating all single factor data
         self.X_single_train = np.concatenate([train_test_single_factor_splits[key][0] for key in self.fundamental_order if type(key) == str], axis=1)
         self.X_single_test = np.concatenate([train_test_single_factor_splits[key][1] for key in self.fundamental_order if type(key) == str], axis=1)
 
@@ -200,12 +199,18 @@ class TickerPredictorModel:
     
     def future_projection(self) -> Dict[str, Union[float, str]]:
         """Project future stock prices based on model predictions."""
+        # Storing output for future projection, single_factor and multifactor as the single-sample input for the modle
         output = {}
         single_factor = np.zeros((1, 1 + len(self.extracted_income.keys())))
         multifactor = np.zeros((1, N, len(self.extracted_technical.keys())))
+
+        # We iterate through the technical data order established before to ensure the same order of features
+        # We extract the last self.n values (window size) for each technical indicator
         for i in range(len(self.technical_data_order)):
             key = self.technical_data_order[i]
             multifactor[0, :, i] = self.scalers_x[key].transform(np.array([value for _, value in self.extracted_technical[key][-self.n:]]).reshape((1, -1))).reshape(self.n)
+        
+        # We iterate through our original fundamental order, taking the most recent value that exists for each single factor
         for i in range(len(self.fundamental_order)):
             key = self.fundamental_order[i]
             if key == "currentPrice":
@@ -214,6 +219,8 @@ class TickerPredictorModel:
                 single_factor[0, i] = self.scalers_x[key].transform(np.array(self.extracted_income[key][-1][1]).reshape((1, -1))).reshape(1)
             else:
                 single_factor[0, i] = self.scalers_x[key].transform(np.array(self.extracted_cash_flow[key][-1][1]).reshape((1, -1))).reshape(1)
+        
+        # We make our prediction, and store the output 
         output["Future Price"] = float(self.model.predict([multifactor, single_factor]))
         output["Current Price"] = self.stock_data[-1][1]
         output["Dir Prediction"] = 'Up' if output["Future Price"] > self.stock_data[-1][1] else 'Down'
